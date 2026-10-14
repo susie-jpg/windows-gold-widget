@@ -41,7 +41,6 @@ class PrivateNote:
         self.hotkey_down = False
         self.build_ui()
         self.apply_capture_exclusion()
-        self.root.bind("<Escape>", lambda e: self.close())
         self.root.bind("<Control-s>", lambda e: self.save_note())
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self.hotkey_timer = self.root.after(80, self.poll_hotkey)
