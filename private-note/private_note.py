@@ -37,11 +37,14 @@ class PrivateNote:
         self.root.geometry(self.config.get("geometry", "520x360+120+120"))
         self.root.attributes("-topmost", True)
         self.excluded = False
+        self.hidden = False
+        self.hotkey_down = False
         self.build_ui()
         self.apply_capture_exclusion()
         self.root.bind("<Escape>", lambda e: self.close())
         self.root.bind("<Control-s>", lambda e: self.save_note())
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.hotkey_timer = self.root.after(80, self.poll_hotkey)
 
     def build_ui(self):
         header = tk.Frame(self.root, bg="#151918")
@@ -67,6 +70,11 @@ class PrivateNote:
         footer.pack(fill="x", padx=12, pady=(0, 8))
         tk.Label(footer, text="Ctrl+S 保存 · Esc 退出 · 可直接 Ctrl+V 粘贴", bg="#151918", fg="#829088", font=("Microsoft YaHei UI", 8)).pack(side="left")
         tk.Button(footer, text="重新检测", command=self.apply_capture_exclusion, bg="#151918", fg="#cbd4ce", relief="flat", bd=0).pack(side="right")
+        self.grip = tk.Label(self.root, text="◢", bg="#151918", fg="#829088", cursor="size_nw_se", font=("Segoe UI", 9))
+        self.grip.place(relx=1, rely=1, anchor="se")
+        self.grip.bind("<ButtonPress-1>", self.start_resize)
+        self.grip.bind("<B1-Motion>", self.drag_resize)
+        self.grip.bind("<ButtonRelease-1>", lambda e: self.save_config())
 
     def apply_capture_exclusion(self):
         self.root.update_idletasks()
@@ -82,6 +90,38 @@ class PrivateNote:
     def drag(self, event):
         self.root.geometry(f"+{event.x_root-self.offset[0]}+{event.y_root-self.offset[1]}")
 
+    def start_resize(self, event):
+        self.resize_origin = (event.x_root, event.y_root, self.root.winfo_width(), self.root.winfo_height())
+
+    def drag_resize(self, event):
+        x, y, width, height = self.resize_origin
+        self.root.geometry(f"{max(300, width + event.x_root - x)}x{max(220, height + event.y_root - y)}")
+
+    def poll_hotkey(self):
+        """轮询全局按键状态，隐藏后仍可用 Ctrl+Shift+H 恢复。"""
+        try:
+            ctrl = ctypes.windll.user32.GetAsyncKeyState(0x11) & 0x8000
+            shift = ctypes.windll.user32.GetAsyncKeyState(0x10) & 0x8000
+            h = ctypes.windll.user32.GetAsyncKeyState(0x48) & 0x8000
+            pressed = bool(ctrl and shift and h)
+            if pressed and not self.hotkey_down:
+                self.toggle_visibility()
+            self.hotkey_down = pressed
+        finally:
+            if not self.root.winfo_exists():
+                return
+            self.hotkey_timer = self.root.after(80, self.poll_hotkey)
+
+    def toggle_visibility(self):
+        self.hidden = not self.hidden
+        if self.hidden:
+            self.save_config()
+            self.root.withdraw()
+        else:
+            self.root.deiconify()
+            self.root.attributes("-topmost", True)
+            self.apply_capture_exclusion()
+
     def save_config(self):
         save_config({"geometry": f"{self.root.winfo_width()}x{self.root.winfo_height()}+{self.root.winfo_x()}+{self.root.winfo_y()}", "text": self.text.get("1.0", "end-1c")})
 
@@ -90,6 +130,8 @@ class PrivateNote:
         self.status.configure(text="已保存", fg="#9bd4ad")
 
     def close(self):
+        if hasattr(self, "hotkey_timer"):
+            self.root.after_cancel(self.hotkey_timer)
         self.save_config()
         self.root.destroy()
 
